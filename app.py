@@ -1,129 +1,111 @@
-import os
-# os.system('pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.9/index.html')
-# os.system("git clone https://github.com/microsoft/unilm.git")
 import streamlit as st
-import cv2
+from base64io import Base64IO
+import base64
+import os
+
 import pdf2image
-import numpy as np
-import matplotlib.pyplot as plt
-
-import math
-import json
-from PIL import Image
-import pdfquery
 from PyPDF2 import PdfFileReader
+import pdfquery
+from model import extract_paragraphs
+from difflib import SequenceMatcher
+import difflib
+from colr import color
+import pandas as pd
 
-import sys
-sys.path.append("unilm")
 
-import cv2
-import warnings
-warnings.filterwarnings("ignore")
+st.title('PDF Documents Quality Check')
+st.subheader('Upload Any 2 PDFs...')
+fileDir = "/home/ubuntu/soulpage/PURNA/pdf_comparision_qc_task/streamlit_demo/downloads/"
 
-from unilm.dit.object_detection.ditod import add_vit_config
+def similar(a, b):
+	# A function to compare 2 strings/Paragraphs to return text
+    return SequenceMatcher(None, a, b).ratio()
 
-import torch
-torch.cuda.empty_cache()
+def show_pdf(file_path):
+	# A function to display the pdf.
+	with open(file_path,"rb") as f:
+		base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+	pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
+	st.markdown(pdf_display, unsafe_allow_html=True)
 
-from detectron2.config import CfgNode as CN
-from detectron2.config import get_cfg
-from detectron2.utils.visualizer import ColorMode, Visualizer
-from detectron2.data import MetadataCatalog
-from detectron2.engine import DefaultPredictor
+def inline_diff(a, b):
+	# A function that can highlight inline differences in 2 paragraphs.
+    matcher = difflib.SequenceMatcher(None, a, b)
+    def process_tag(tag, i1, i2, j1, j2):
+        if tag == 'insert':
+            return color('......', fore='black', back='orange')
+        elif tag!='equal':
+            return color(matcher.a[i1:i2], fore='black', back='orange')
+        else:
+            return matcher.a[i1:i2]
+    return ''.join(process_tag(*t) for t in matcher.get_opcodes())
 
-# import gradio as gr
+matches = []
+not_found_paragraphs = []
+extracted_data = []
+pdf1_bboxes = []
+pdf2_bboxes = []
+scores = []
+pdf1_texts = []
+pdf2_texts = []
+pdf1_pages = []
+pdf2_pages = []
 
-# Step 1: instantiate config
-cfg = get_cfg()
-add_vit_config(cfg)
-cfg.merge_from_file("dit/cascade_dit_base.yml")
+uploaded_files = st.file_uploader('Choose your .pdf file', type="pdf",key = "sample", accept_multiple_files = True)
+print(uploaded_files)
 
-cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+if uploaded_files is not None:
+	#st.success('Success message')
+	for fileno,pdf_file in enumerate(uploaded_files):	
+		file_details = {"filename":pdf_file.name, "filetype":pdf_file.type,
+									"filesize":str(round(pdf_file.size/1000000,2)) +" MB"}
+		st.write(file_details)
+		
+		with open(os.path.join(fileDir,pdf_file.name),"wb") as f:
+			f.write((pdf_file).getbuffer())
+		
+		st.info("Extracting Text from pdf "+str(fileno+1))
+		pdf_file_path= os.path.join(fileDir,pdf_file.name)
+		images = pdf2image.convert_from_path(pdf_file_path)
+		pdf = PdfFileReader(open(pdf_file_path,'rb'))
+		pqpdf = pdfquery.PDFQuery(pdf_file_path)
+		extracted_data.append(extract_paragraphs(pdf_file_path, images, pdf, pqpdf,type = str(fileno)))
+		#output_file =  pdf_file.name.split(".")[-2]+"_Output.pdf"
+		#show_pdf(os.path.join(fileDir,output_file))
+	
+	#download pdf.......
+	# for fileno,pdf_file in enumerate(uploaded_files):
+	# 	output_file =  pdf_file.name.split(".")[-2]+"_Output.pdf"
+	# 	with open(os.path.join(fileDir,output_file)) as fp:
+	# 		pdf  = fp.read()
+	# 	st.download_button(label="Download PDF", data=pdf, file_name= output_file, mime='application/octet-stream')
+	
 
-# Step 2: add model weights URL to config
-cfg.MODEL.WEIGHTS = "https://layoutlm.blob.core.windows.net/dit/dit-fts/publaynet_dit-b_cascade.pth"
 
-# Step 3: set device
-cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+	if extracted_data:
+		for item1 in list(extracted_data[0].items()):
+			for item2 in list(extracted_data[1].items()):
+				score = similar(item1[1]['text'], item2[1]['text'])
+				if score > 0.75:
+					pdf1_bboxes.append(int(str(item1[0]).split(".")[1])+1)
+					pdf1_pages.append(int(str(item1[0]).split(".")[0])+1)
+					pdf2_bboxes.append(int(str(item2[0]).split(".")[1])+1)
+					pdf2_pages.append(int(str(item2[0]).split(".")[0])+1)
+					scores.append(round(score,2))
+					pdf1_texts.append(str(item1[1]['text']))
+					pdf2_texts.append(str(item2[1]['text']))
+				if score == 0.0:
+					# not_found_paragraphs[item1[0]] = item1[1]['text']
+					not_found_paragraphs.append([item1[0],item1[1]['text']])
 
-# Step 4: define model
-predictor = DefaultPredictor(cfg)
-
-md = MetadataCatalog.get(cfg.DATASETS.TEST[0])
-classes  =["text","title","list","table","figure"]
-md.set(thing_classes= classes)
-
-def analyze_image_box(img):
-    #print(torch.cuda.memory_summary(device=None, abbreviated=False))
-    output = predictor(img)["instances"]
-    boxes = output.pred_boxes.to("cpu")
-    scores = output.scores.to("cpu")
-    final_classes = [classes[label] for label in output.pred_classes.to("cpu")]
-
-    v = Visualizer(img[:, :, ::-1],
-                    md,
-                    scale=1.0,
-                    instance_mode=ColorMode.SEGMENTATION)
-    
-    final_list = []
-    for box,label,score in zip(boxes, final_classes, scores):
-        box = box.tolist()
-        final_list.append([box[0],box[1],box[2],box[3], label, round(score.item(),2)])
-    final_list = sorted(final_list, key = lambda x:x[1])
-
-    final_boxes = []
-    final_scores = []
-    for box0,box1,box2,box3,label,score in final_list:
-        if label == "text" or "title":
-            box = [box0, box1, box2, box3]
-            v.draw_box(box)
-            final_boxes.append(box)
-            v.draw_text(str(label + str(round(score,2))) , box[:2])
-            final_scores.append(round(score,2))
-    
-    v = v.get_output()
-    result_image =  v.get_image()[:, :, ::-1]
-    return result_image, final_boxes, final_scores
-
-def convert_imgbbox_to_pdfbbox(box, img, page):
-    img_height, img_width, _ = img.shape
-    _,_,page_width, page_height = page.mediaBox
-    x,y,x1,y1 = box
-
-    newx = x*(page_width/ img_width)
-    newy = y*(page_height/ img_height)
-    newx1 = x1*(page_width/ img_width)
-    newy1 = y1*(page_height/ img_height)
-
-    newy  =  page_height - newy
-    newy1 =  page_height - newy1
-    return [newx, newy1, newx1, newy]
-
-@st.cache
-def extract_paragraphs(pdf_file, images, pdf, pqpdf,type = "None"):
-    data = {}
-    output_images = []
-    output_file =  pdf_file.split(".")[-2]+"_Output.pdf"
-
-    for pg_no, img in enumerate(images):
-        img = np.array(img)
-        result_image, all_boxes, all_scores = analyze_image_box(img)
-        for box_no,box in enumerate(all_boxes):
-            new_box = convert_imgbbox_to_pdfbbox(box, img, pdf.getPage(pg_no))
-            tbox = [math.ceil(b) for b in new_box]
-            
-            co = ','.join([str(int(cord)) for cord in tbox])
-            query = f'LTTextLineHorizontal:overlaps_bbox("{co}")'
-            
-            print(type, "page no: ", pg_no, "box no :",box_no)
-            pqpdf.load(pg_no)
-            text = pqpdf.pq(query).text().replace("- ","")
-            item = {"pgno":pg_no, "boxno":box_no,"box":tbox,"text":text}
-            data[str(pg_no)+"."+str(box_no)] = item
-        print("pdf no:",type,"Page no :", pg_no)
-        output_images.append(Image.fromarray(result_image))
-
-    output_images[0].save(output_file, save_all=True, append_images= output_images[1:])
-    return data
-
+	table_df = pd.DataFrame()
+	table_df['Pdf1 Pg no'] = pdf1_pages
+	table_df['Pdf1 text no'] = pdf1_bboxes
+	table_df['Pdf2 Pg no'] = pdf2_pages
+	table_df['Pdf2 text no'] = pdf2_bboxes
+	table_df["Text in pdf1"] = pdf1_texts
+	table_df["Text in pdf2"] = pdf2_texts
+	table_df['Score'] = scores
+	st.balloons()
+	st.table(table_df)
 
