@@ -18,11 +18,13 @@
 
 `pip install -r requirements.txt`
 
-`torch==1.10.0+cu102`
+Make sure `Cuda 10.2` installed on server
 
-`detectron2==0.6+cu102`
+Pytorch `torch==1.10.0+cu102`
+`pip install torch==1.10.0+cu102 torchvision==0.11.0+cu102 torchaudio==0.10.0 -f https://download.pytorch.org/whl/torch_stable.html`
+
+Detectron `detectron2==0.6+cu102`
+`python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.10/index.html`
 
 #### Command to run:
-`streamlit run app.py`
-
-
+`streamlit run app.py --server.fileWatcherType none`
