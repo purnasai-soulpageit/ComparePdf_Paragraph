@@ -16,6 +16,12 @@
 - app.py= Main file that runs streamlit properties and calls Deeplearning model methods.
 - model.py = Has Deeplearning methods and Image parsing, model defintion and inference.
 
+`pip install -r requirements.txt`
+
+`torch==1.10.0+cu102`
+
+`detectron2==0.6+cu102`
+
 #### Command to run:
 `streamlit run app.py`
 

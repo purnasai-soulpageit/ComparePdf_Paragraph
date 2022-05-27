@@ -30,7 +30,7 @@ cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
 cfg.MODEL.WEIGHTS = "https://layoutlm.blob.core.windows.net/dit/dit-fts/publaynet_dit-b_cascade.pth"
 
 # Step 3: set device
-cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+cfg.MODEL.DEVICE = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
 
 # Step 4: define model
 predictor = DefaultPredictor(cfg)
@@ -102,7 +102,8 @@ def extract_paragraphs(pdf_file, images, pdf, pqpdf,type = "None"):
 
     for pg_no, img in enumerate(images):
         img = np.array(img)
-        result_image, all_boxes, all_scores = analyze_image_box(img)
+        with torch.no_grad():
+            result_image, all_boxes, all_scores = analyze_image_box(img)
         for box_no,box in enumerate(all_boxes):
             new_box = convert_imgbbox_to_pdfbbox(box, img, pdf.getPage(pg_no))
             tbox = [math.ceil(b) for b in new_box]
@@ -120,5 +121,3 @@ def extract_paragraphs(pdf_file, images, pdf, pqpdf,type = "None"):
 
     output_images[0].save(output_file, save_all=True, append_images= output_images[1:])
     return data
-
-
