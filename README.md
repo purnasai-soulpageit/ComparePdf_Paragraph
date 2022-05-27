@@ -20,11 +20,14 @@
 
 Make sure `Cuda 10.2` installed on server
 
-Pytorch `torch==1.10.0+cu102`
-`pip install torch==1.10.0+cu102 torchvision==0.11.0+cu102 torchaudio==0.10.0 -f https://download.pytorch.org/whl/torch_stable.html`
+Install Pytorch `torch==1.10.0+cu102` with:
 
-Detectron `detectron2==0.6+cu102`
+`pip install torch==1.10.0+cu102 torchvision==0.11.0+cu102 -f https://download.pytorch.org/whl/torch_stable.html`
+
+
+Install Detectron `detectron2==0.6+cu102` with:
+
 `python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.10/index.html`
 
-#### Command to run:
+#### Command to run app:
 `streamlit run app.py --server.fileWatcherType none`
